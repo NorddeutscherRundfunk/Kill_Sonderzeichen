@@ -1,0 +1,2 @@
+# Kill_Sonderzeichen
+There are a lot of machines that don't like special characters or signs like 'öäß$§'. That tool replaces first all characters with accents with their pure latin characters. Then it replaces all characters not a-zA-Z0-9 and dot with an underscore. At least it reduces more then one underscore in series with just one. A leading or trailing underscore will be deleted too. You can pass files and folders (including recursive) as parameter via sendto or drag and drop.
