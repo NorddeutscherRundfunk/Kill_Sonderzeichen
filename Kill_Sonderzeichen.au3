@@ -2,7 +2,7 @@
 #AutoIt3Wrapper_Icon=Icons\ascii.ico
 #AutoIt3Wrapper_Res_Comment=Replaces all characters with accents or non ascii. Only latin characters and numbers will stay.
 #AutoIt3Wrapper_Res_Description=Replaces all characters with accents or non ascii. Only latin characters and numbers will stay.
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.31
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.34
 #AutoIt3Wrapper_Res_Fileversion_AutoIncrement=y
 #AutoIt3Wrapper_Res_CompanyName=Norddeutscher Rundfunk
 #AutoIt3Wrapper_Res_LegalCopyright=Conrad Zelck
@@ -15,55 +15,79 @@
 #Au3Stripper_Parameters=/mo
 #EndRegion ;**** Directives created by AutoIt3Wrapper_GUI ****
 #include <File.au3>
-#include <MsgBoxConstants.au3>
 #include <ProgressConstants.au3>
 #include <SendMessage.au3>
+#include <GUIConstantsEx.au3>
+#include <WindowsConstants.au3>
+#include <Array.au3>
 #include <TrayCox.au3> ; source: https://github.com/SimpelMe/TrayCox
 
-Local Const $IS_FOLDER = True
-Local $aCmdLine
-If $CmdLineRaw = "" Then
-	MsgBox($MB_TOPMOST, "Error", "No files are choosen." & @CRLF & @CRLF & "Program will exit.")
+Global Const $IS_FOLDER = True
+Global $g_aDropFiles[1]
+Local $aFilesAndFolders
+
+; if parameter given via sendto or drag&drop onto AppIcon
+If $CmdLineRaw <> "" Then
+	$aFilesAndFolders = $CmdLine
+	_RenamingAll($aFilesAndFolders)
 	Exit
-Else
-	$aCmdLine = $CmdLine
 EndIf
 
-; kind of progress bar
-Local $hGUI = GUICreate("running ...", 350, 40)
-GUICtrlCreateProgress(10, 10, 330, 20, $PBS_MARQUEE)
-_SendMessage(GUICtrlGetHandle(-1), $PBM_SETMARQUEE, True, 50) ; final parameter is update time in ms
+; if no parameters are give open a drag and drop gui
+GUICreate("Kill_Chars", 300, 100, -1, -1, -1, $WS_EX_ACCEPTFILES)
+GUICtrlCreateLabel("Drag&&Drop your files and folders here.", 20, 40, 260, 20, $SS_CENTER)
+GUICtrlSetFont(-1, 10)
+Local $FILES_DROPPED = GUICtrlCreateDummy()
 GUISetState()
+GUIRegisterMsg($WM_DROPFILES, 'WM_DROPFILES_FUNC')
 
-Local $aFiles, $aFolders, $aSplit
-Local $sDrive, $sDir, $sFName, $sExt
-Local $sFileNameOld, $sFileNameNew, $sFileOld, $sFileNew
-For $i = 1 To $aCmdLine[0] ; go through all given files and/or directories
-	If FileGetAttrib($aCmdLine[$i]) = "D" Then ; is a directory
-		$aFiles = _RecFileListToArray($aCmdLine[$i], "*", 1, 1, 1, 2) ; list files only in that directory
-		If Not @error Then
-			If $aFiles[0] > 0 Then ; go through all files in that directory
-				For $ii = 1 To $aFiles[0]
-					_Rename($aFiles[$ii]) ; rename current file
-				Next
-			EndIf
-		EndIf
-		$aFolders = _RecFileListToArray($aCmdLine[$i], "*", 2, 1, 1, 2) ; list folders only in that directory
-		If Not @error Then
-			If $aFolders[0] > 0 Then ; go through all folders in that directory
-				For $iii = $aFolders[0] To 1 Step - 1
-					_Rename($aFolders[$iii], $IS_FOLDER) ; rename current folder
-				Next
-			EndIf
-		EndIf
-		_Rename($aCmdLine[$i], $IS_FOLDER) ; rename that directory folder
-	Else ; is only one file
-		_Rename($aCmdLine[$i]) ; rename that file
-	EndIf
-Next
+While True
+    Switch GUIGetMsg()
+        Case $GUI_EVENT_CLOSE
+            ExitLoop
+        Case $FILES_DROPPED
+            $aFilesAndFolders = $g_aDropFiles
+            _RenamingAll($aFilesAndFolders)
+    EndSwitch
+WEnd
+
 Exit
 
 #Region Funcs
+Func _RenamingAll($aFilesAndFolders)
+	; kind of progress bar
+	Local $hGUI = GUICreate("running ...", 350, 40)
+	GUICtrlCreateProgress(10, 10, 330, 20, $PBS_MARQUEE)
+	_SendMessage(GUICtrlGetHandle(-1), $PBM_SETMARQUEE, True, 50) ; final parameter is update time in ms
+	GUISetState()
+
+	Local $aFiles, $aFolders
+	For $i = 1 To $aFilesAndFolders[0] ; go through all given files and/or directories
+		If FileGetAttrib($aFilesAndFolders[$i]) = "D" Then ; is a directory
+			$aFiles = _RecFileListToArray($aFilesAndFolders[$i], "*", 1, 1, 1, 2) ; list files only in that directory
+			If Not @error Then
+				If $aFiles[0] > 0 Then ; go through all files in that directory
+					For $ii = 1 To $aFiles[0]
+						_Rename($aFiles[$ii]) ; rename current file
+					Next
+				EndIf
+			EndIf
+			$aFolders = _RecFileListToArray($aFilesAndFolders[$i], "*", 2, 1, 1, 2) ; list folders only in that directory
+			If Not @error Then
+				If $aFolders[0] > 0 Then ; go through all folders in that directory
+					For $iii = $aFolders[0] To 1 Step - 1
+						_Rename($aFolders[$iii], $IS_FOLDER) ; rename current folder
+					Next
+				EndIf
+			EndIf
+			_Rename($aFilesAndFolders[$i], $IS_FOLDER) ; rename that directory folder
+		Else ; is only one file
+			_Rename($aFilesAndFolders[$i]) ; rename that file
+		EndIf
+	Next
+	GUIDelete($hGUI)
+EndFunc
+
 Func _Rename($sFile, $bFolder = False)
 	Local $iSuccess
 	Local $sDrive, $sDir, $sFName, $sExt
@@ -131,6 +155,24 @@ Func _StringReplaceDoubleUnderline($sString) ; replaces double underscores with 
 	If StringRight($sString,1) = "_" Then $sString = StringTrimRight($sString,1) ; deletes trailing underscore
 	Return $sString
 EndFunc   ;===>_StringReplaceDoubleUnderline
+
+Func WM_DROPFILES_FUNC($hWnd, $msgID, $wParam, $lParam)
+	If $bPaused Then Return
+	#forceref $hWnd, $msgID, $wParam, $lParam
+    Local $nSize, $pFileName
+    Local $nAmt = DllCall('shell32.dll', 'int', 'DragQueryFileW', 'hwnd', $wParam, 'int', 0xFFFFFFFF, 'ptr', 0, 'int', 0)
+    ReDim $g_aDropFiles[$nAmt[0]]
+    For $i = 0 To $nAmt[0] - 1
+        $nSize = DllCall('shell32.dll', 'int', 'DragQueryFileW', 'hwnd', $wParam, 'int', $i, 'ptr', 0, 'int', 0)
+        $nSize = $nSize[0] + 1
+        $pFileName = DllStructCreate('wchar[' & $nSize & ']')
+        DllCall('shell32.dll', 'int', 'DragQueryFileW', 'hwnd', $wParam, 'int', $i, 'ptr', DllStructGetPtr($pFileName), 'int', $nSize)
+        $g_aDropFiles[$i] = DllStructGetData($pFileName, 1)
+        $pFileName = 0
+    Next
+	_ArrayInsert($g_aDropFiles, 0, UBound($g_aDropFiles))
+    GUICtrlSendToDummy($FILES_DROPPED, $nAmt[0])
+EndFunc   ;==>WM_DROPFILES_FUNC
 #EndRegion
 
 #region - Funcs RFLTA
