@@ -2,7 +2,7 @@
 #AutoIt3Wrapper_Icon=Icons\ascii.ico
 #AutoIt3Wrapper_Res_Comment=Replaces all characters with accents or non ascii. Only latin characters and numbers will stay.
 #AutoIt3Wrapper_Res_Description=Replaces all characters with accents or non ascii. Only latin characters and numbers will stay.
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.34
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.37
 #AutoIt3Wrapper_Res_Fileversion_AutoIncrement=y
 #AutoIt3Wrapper_Res_CompanyName=Norddeutscher Rundfunk
 #AutoIt3Wrapper_Res_LegalCopyright=Conrad Zelck
@@ -25,6 +25,7 @@
 Global Const $IS_FOLDER = True
 Global $g_aDropFiles[1]
 Local $aFilesAndFolders
+Global $iSuccess
 
 ; if parameter given via sendto or drag&drop onto AppIcon
 If $CmdLineRaw <> "" Then
@@ -89,7 +90,6 @@ Func _RenamingAll($aFilesAndFolders)
 EndFunc
 
 Func _Rename($sFile, $bFolder = False)
-	Local $iSuccess
 	Local $sDrive, $sDir, $sFName, $sExt
 	Local $sFileNameOld, $sFileNameNew, $sFileOld, $sFileNew
 	Local $aSplit = _PathSplit($sFile, $sDrive, $sDir, $sFName, $sExt)
@@ -100,13 +100,16 @@ Func _Rename($sFile, $bFolder = False)
 	$sFileNameNew = StringTrimRight($sFileNameNew, StringLen($sFileNameNew) - 56) ; max. 56 characters because of Sony Professional Disc
 	$sFileNameNew = _StringReplaceDoubleUnderline($sFileNameNew) ; delete trailing underscore if truncating produces one
 	$sFileOld = $aSplit[0]
-	$sFileNew = _PathMake($aSplit[1],$aSplit[2],$sFileNameNew,$aSplit[4])
+	$sFileNew = _PathMake($aSplit[1], $aSplit[2], $sFileNameNew, $aSplit[4])
+	While FileExists($sFileNew)
+		$sFileNew = _PathMake($aSplit[1], $aSplit[2], $sFileNameNew & "_" & Random(10000, 99999, 1), $aSplit[4]) ; rename with a random extension
+	WEnd
 	If $bFolder Then
 		$iSuccess = DirMove($sFileOld, $sFileNew) ; rename directory
-		If $iSuccess = 0 Then DirMove($sFileOld, $sFileNew & "_" & Random(10000, 99999, 1)) ; rename directory with a random extension
+		ConsoleWrite("Success DirMove: " & $iSuccess & @CRLF)
 	Else
 		$iSuccess = FileMove($sFileOld, $sFileNew) ; rename file
-		If $iSuccess = 0 Then FileMove($sFileOld, $sFileNew & "_" & Random(10000, 99999, 1)) ; rename directory with a random extension
+		ConsoleWrite("Success FileMove: " & $iSuccess & @CRLF)
 	EndIf
 EndFunc
 
@@ -139,7 +142,8 @@ Func _StringReplaceAccent($sString) ; replaces all characters with accent to pur
 EndFunc   ;==>_StringReplaceAccent
 
 Func _StringReplaceNonAscii($sString) ; replaces all non ascii characters with an underscore
-	$sString = StringRegExpReplace ( $sString, "[\x00-\x2D\x2F\x3A-\x40\x5B-\x60\x7B-\xFF]", "_")
+;~ 	$sString = StringRegExpReplace ( $sString, "[\x00-\x2D\x2F\x3A-\x40\x5B-\x60\x7B-\xFFFF]", "_")
+	$sString = StringRegExpReplace ( $sString, "\W", "_")
 	If @error == 0 And @extended > 0 Then
 		ConsoleWrite("NonAscii: " & $sString & @LF)
 	EndIf
