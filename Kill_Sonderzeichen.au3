@@ -2,7 +2,7 @@
 #AutoIt3Wrapper_Icon=Icons\ascii.ico
 #AutoIt3Wrapper_Res_Comment=Replaces all characters with accents or non ascii. Only latin characters and numbers will stay.
 #AutoIt3Wrapper_Res_Description=Replaces all characters with accents or non ascii. Only latin characters and numbers will stay.
-#AutoIt3Wrapper_Res_Fileversion=1.0.0.37
+#AutoIt3Wrapper_Res_Fileversion=1.0.0.42
 #AutoIt3Wrapper_Res_Fileversion_AutoIncrement=y
 #AutoIt3Wrapper_Res_CompanyName=Norddeutscher Rundfunk
 #AutoIt3Wrapper_Res_LegalCopyright=Conrad Zelck
@@ -20,18 +20,32 @@
 #include <GUIConstantsEx.au3>
 #include <WindowsConstants.au3>
 #include <Array.au3>
+#include <Date.au3>
 #include <TrayCox.au3> ; source: https://github.com/SimpelMe/TrayCox
 
 Global Const $IS_FOLDER = True
 Global $g_aDropFiles[1]
 Local $aFilesAndFolders
 Global $iSuccess
+Global $g_bDryRun = False ; <== for debugging only
+Global $g_sListOld
+Global $g_sListNew
+Global $g_sLogText
+Global $g_bWriteToLog = False
 
 ; if parameter given via sendto or drag&drop onto AppIcon
-If $CmdLineRaw <> "" Then
-	$aFilesAndFolders = $CmdLine
-	_RenamingAll($aFilesAndFolders)
-	Exit
+ConsoleWrite("$CmdLineRaw: " & $CmdLineRaw & @CRLF)
+If @Compiled Then
+	If $CmdLineRaw <> "" Then
+		$iSuccess = MsgBox($MB_TOPMOST + $MB_YESNOCANCEL, "ACHTUNG", "Es gibt kein UNDO." & @CRLF & "Bist Du sicher, dass Du dies umbenennen möchtest?" & @CRLF & @CRLF & $CmdLineRaw)
+		If $iSuccess = $IDYES Then
+			$aFilesAndFolders = $CmdLine
+			ConsoleWrite("RENAMING ALL" & @CRLF)
+			_RenamingAll($aFilesAndFolders)
+			If $g_bWriteToLog Then FileWrite(@ScriptDir & "\Logfile.txt", _NowCalc() & @CRLF & $g_sLogText & @CRLF)
+		EndIf
+		Exit
+	EndIf
 EndIf
 
 ; if no parameters are give open a drag and drop gui
@@ -48,7 +62,15 @@ While True
             ExitLoop
         Case $FILES_DROPPED
             $aFilesAndFolders = $g_aDropFiles
-            _RenamingAll($aFilesAndFolders)
+			$iSuccess = MsgBox($MB_TOPMOST + $MB_YESNOCANCEL, "ACHTUNG", "Es gibt kein UNDO." & @CRLF & "Bist Du sicher, dass Du dies umbenennen möchtest?" & @CRLF & @CRLF & _ArrayToString($aFilesAndFolders, @CR, 1))
+			If $iSuccess = $IDYES Then
+				_RenamingAll($aFilesAndFolders)
+				If $g_bWriteToLog Then FileWrite(@ScriptDir & "\Logfile.txt", _NowCalc() & @CRLF & $g_sLogText & @CRLF)
+			EndIf
+			If $g_bDryRun Then
+				ConsoleWrite("! ----------------------------------------------------------------------" & @CRLF & $g_sListOld & @CRLF)
+				ConsoleWrite("+ ----------------------------------------------------------------------" & @CRLF & $g_sListNew & @CRLF)
+			EndIf
     EndSwitch
 WEnd
 
@@ -63,6 +85,8 @@ Func _RenamingAll($aFilesAndFolders)
 	GUISetState()
 
 	Local $aFiles, $aFolders
+	$g_sLogText = ""
+	$g_bWriteToLog = False
 	For $i = 1 To $aFilesAndFolders[0] ; go through all given files and/or directories
 		If FileGetAttrib($aFilesAndFolders[$i]) = "D" Then ; is a directory
 			$aFiles = _RecFileListToArray($aFilesAndFolders[$i], "*", 1, 1, 1, 2) ; list files only in that directory
@@ -97,19 +121,33 @@ Func _Rename($sFile, $bFolder = False)
 	$sFileNameNew = _StringReplaceAccent($sFileNameOld) ; replaces all characters with accent to pure latin characters
 	$sFileNameNew = _StringReplaceNonAscii($sFileNameNew) ; replaces all non ascii characters with an underscore
 	$sFileNameNew = _StringReplaceDoubleUnderline($sFileNameNew) ; replaces double underscores with just one
-	$sFileNameNew = StringTrimRight($sFileNameNew, StringLen($sFileNameNew) - 56) ; max. 56 characters because of Sony Professional Disc
-	$sFileNameNew = _StringReplaceDoubleUnderline($sFileNameNew) ; delete trailing underscore if truncating produces one
+	; Don't remove characters if filename is very long
+;~ 	$sFileNameNew = StringTrimRight($sFileNameNew, StringLen($sFileNameNew) - 56) ; max. 56 characters because of Sony Professional Disc
+;~ 	$sFileNameNew = _StringReplaceDoubleUnderline($sFileNameNew) ; delete trailing underscore if truncating produces one
 	$sFileOld = $aSplit[0]
 	$sFileNew = _PathMake($aSplit[1], $aSplit[2], $sFileNameNew, $aSplit[4])
-	While FileExists($sFileNew)
-		$sFileNew = _PathMake($aSplit[1], $aSplit[2], $sFileNameNew & "_" & Random(10000, 99999, 1), $aSplit[4]) ; rename with a random extension
-	WEnd
-	If $bFolder Then
-		$iSuccess = DirMove($sFileOld, $sFileNew) ; rename directory
-		ConsoleWrite("Success DirMove: " & $iSuccess & @CRLF)
-	Else
-		$iSuccess = FileMove($sFileOld, $sFileNew) ; rename file
-		ConsoleWrite("Success FileMove: " & $iSuccess & @CRLF)
+	If StringToBinary($sFileOld, $SB_UTF8) <> StringToBinary($sFileNew, $SB_UTF8) Then
+		ConsoleWrite("Different" & @CRLF)
+		While FileExists($sFileNew)
+			$sFileNew = _PathMake($aSplit[1], $aSplit[2], $sFileNameNew & "_" & Random(10000, 99999, 1), $aSplit[4]) ; rename with a random extension
+		WEnd
+		If $g_bDryRun Then
+			ConsoleWrite($sFileOld & " ==> " & $sFileNew & @CRLF)
+			$g_sListOld &= $sFileOld & @CRLF
+			$g_sListNew &= $sFileNew & @CRLF
+		Else
+			If $bFolder Then
+				$iSuccess = DirMove($sFileOld, $sFileNew) ; rename directory
+				ConsoleWrite("Success DirMove: " & $iSuccess & @CRLF)
+				$g_sLogText &= $sFileOld & " ==> " & $sFileNew & @CRLF
+				$g_bWriteToLog = True
+			Else
+				$iSuccess = FileMove($sFileOld, $sFileNew) ; rename file
+				ConsoleWrite("Success FileMove: " & $iSuccess & @CRLF)
+				$g_sLogText &= $sFileOld & " ==> " & $sFileNew & @CRLF
+				$g_bWriteToLog = True
+			EndIf
+		EndIf
 	EndIf
 EndFunc
 
@@ -143,7 +181,8 @@ EndFunc   ;==>_StringReplaceAccent
 
 Func _StringReplaceNonAscii($sString) ; replaces all non ascii characters with an underscore
 ;~ 	$sString = StringRegExpReplace ( $sString, "[\x00-\x2D\x2F\x3A-\x40\x5B-\x60\x7B-\xFFFF]", "_")
-	$sString = StringRegExpReplace ( $sString, "\W", "_")
+;~ 	$sString = StringRegExpReplace ( $sString, "\W", "_")
+	$sString = StringRegExpReplace ( $sString, "[^\w\h\-]", "_")
 	If @error == 0 And @extended > 0 Then
 		ConsoleWrite("NonAscii: " & $sString & @LF)
 	EndIf
